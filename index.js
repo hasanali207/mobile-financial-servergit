@@ -138,7 +138,8 @@ async function run() {
     // Send Money 
     app.post('/transactions/send', async (req, res) => {
       const {senderEmail, recipientEmail, amount, PIN } = req.body;
-      console.log(senderEmail, recipientEmail, amount, PIN );
+      const amountInt = parseInt(amount)
+      console.log(senderEmail, recipientEmail, amountInt, PIN );
       
       const sender = await usersCollection.findOne({ email: senderEmail });
       if (!sender) {
@@ -151,15 +152,15 @@ async function run() {
       }
 
       // Validate transaction amount
-      if (amount < 50) {
+      if (amountInt < 50) {
         return res.status(400).send({ message: 'Minimum transaction amount is 50 taka' });
       }
     
-      let transactionAmount = amount;
+      let transactionAmount = amountInt;
       let transactionFee = 0;
     
       // Apply fee for transactions over 100 taka
-      if (amount > 100) {
+      if (amountInt > 100) {
         transactionFee = 5;
         transactionAmount -= transactionFee;
       }
@@ -169,20 +170,20 @@ async function run() {
       // Update sender balance
       await usersCollection.updateOne(
         { email: senderEmail },
-        { $inc: { balance: -amount } }
+        { $inc: { balance: -amountInt } }
       );
     
       // Update recipient balance
       await usersCollection.updateOne(
         { email: recipientEmail },
-        { $inc: { balance: amount } }
+        { $inc: { balance: amountInt } }
       );
     
       // Log transaction details
       const transaction = {
         sender: senderEmail,
         recipient: recipientEmail,
-        amount: amount,
+        amount: amountInt,
         fee: transactionFee,
         timestamp: new Date()
       };
@@ -197,7 +198,79 @@ async function run() {
      
 
     });
+     // Cash Out Money 
+     app.post('/transactions/cashout', async (req, res) => {
+      const { senderEmail, recipientEmail, amount, PIN } = req.body;
+      
+      // Convert amount to integer and validate
+      const amountInt = parseInt(amount, 10);
+      if (isNaN(amountInt) || amountInt <= 0) {
+        return res.status(400).send({ message: 'Invalid amount' });
+      }
     
+      try {
+        // Fetch sender data
+        const sender = await usersCollection.findOne({ email: senderEmail});
+        if (!sender) {
+          return res.status(404).send({ message: 'Sender not found' });
+        }
+    
+           
+        // Fetch recipient data (assuming recipient is an agent)
+        const agent = await usersCollection.findOne({ email: recipientEmail, role: 'moderator' });
+        if (!agent) {
+          return res.status(404).send({ message: 'Agent not found' });
+        }
+    
+        // Verify sender's PIN
+        const isMatch = await bcrypt.compare(PIN, sender.PIN);
+        if (!isMatch) {
+          return res.status(401).send({ message: 'Invalid PIN' });
+        }
+    
+        // Calculate fee (1.5% of the amount)
+        const fee = (amountInt * 1.5) / 100;
+        const totalDeduction = amountInt + fee;
+    
+        // Ensure the sender has enough balance
+        if (sender.balance < totalDeduction) {
+          return res.status(400).send({ message: 'Insufficient balance' });
+        }
+    
+        // Perform the transaction
+        const session = client.startSession();
+        session.startTransaction();
+    
+        await usersCollection.updateOne(
+          { email: senderEmail },
+          { $inc: { balance: -totalDeduction } },
+          { session }
+        );
+    
+        await usersCollection.updateOne(
+          { email: recipientEmail },
+          { $inc: { balance: amountInt + fee } },
+          { session }
+        );
+    
+        const transaction = {
+          sender: senderEmail,
+          recipient: recipientEmail,
+          amount: amountInt,
+          fee: fee,
+          timestamp: new Date()
+        };
+    
+        await transactionsCollection.insertOne(transaction, { session });
+    
+        await session.commitTransaction();
+        session.endSession();
+    
+        res.send({ message: 'Cash-out successful', transaction });
+      } catch (error) {
+        res.status(500).send({ message: 'Transaction failed', error: error.message });
+      }
+    });
     
 
 
