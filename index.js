@@ -9,7 +9,7 @@ app.use(express.json());
 app.use(cors());
 const port = process.env.PORT || 5000;
 
-const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId, CURSOR_FLAGS } = require('mongodb');
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.wdiwjgo.mongodb.net/?appName=Cluster0`;
 
 const client = new MongoClient(uri, {
@@ -191,11 +191,7 @@ async function run() {
     
       // Return success response
       res.send({ message: 'Transaction successful', transaction });
-      
-
-
-      
-     
+        
 
     });
      // Cash Out Money 
@@ -272,6 +268,16 @@ async function run() {
       }
     });
     
+// Send Send Money Request 
+      app.post('/transaction/cashin', (req, res)=>{
+
+
+    const { senderEmail, recipientEmail, amount, PIN, status } = req.body;
+        console.log(senderEmail, recipientEmail, amount, PIN, status  );
+        
+
+      })
+
 
 
 
